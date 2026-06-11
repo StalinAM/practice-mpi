@@ -52,10 +52,14 @@ int main(int argc, char **argv)
 
     if (rank == 0)
     {
-        std::vector<double> A(MATRIX_DIM * MATRIX_DIM);
+
+        int rows_per_rank = std::ceil(MATRIX_DIM * 1.0 / nprocs);
+        int total_rows = rows_per_rank * nprocs;
+        int padding = total_rows - MATRIX_DIM;
+
+        std::vector<double> A(total_rows * MATRIX_DIM);
         std::vector<double> b(MATRIX_DIM);
         std::vector<double> x(MATRIX_DIM);
-
         // inicializar la matriz A y el vector b
 
         for (int i = 0; i < MATRIX_DIM; i++)
@@ -73,22 +77,13 @@ int main(int argc, char **argv)
         }
 
         // nmero de filas para cada RANK (proceso)
-        int rows_per_rank = std::ceil(MATRIX_DIM * 1.0 / nprocs);
-        int padding = rows_per_rank * nprocs - MATRIX_DIM;
-
-        fmt::print("MATRIX_DIM: {}, nprocs: {}, rows_per_rank: {}, padding: {}\n",
-                   MATRIX_DIM, nprocs, rows_per_rank, padding);
+        fmt::print("MATRIX_DIM: {}, nprocs: {}, rows_per_rank: {}, total_rows: {}, padding: {}\n",
+                   MATRIX_DIM, nprocs, rows_per_rank, total_rows, padding);
 
         // enviar dimensiones y datos
         for (int i = 1; i < nprocs; i++)
         {
-            int filas = rows_per_rank;
-            if (i == nprocs - 1)
-            {
-                filas = rows_per_rank - padding;
-            }
-            // enviar dimension
-            std::vector<int> data = {MATRIX_DIM, filas};
+            std::vector<int> data = {MATRIX_DIM, rows_per_rank};
 
             MPI_Send(
                 data.data(),
@@ -101,7 +96,7 @@ int main(int argc, char **argv)
             const double *buffer = A.data();
             MPI_Send(
                 &buffer[i * rows_per_rank * MATRIX_DIM],
-                filas * MATRIX_DIM, // data.size()
+                rows_per_rank * MATRIX_DIM, // data.size()
                 MPI_DOUBLE,
                 i,
                 0,
@@ -121,15 +116,10 @@ int main(int argc, char **argv)
 
         for (int i = 1; i < nprocs; i++)
         {
-            int filas = rows_per_rank;
-            if (i == nprocs - 1)
-            {
-                filas = rows_per_rank - padding;
-            }
 
             MPI_Recv(
                 x.data() + (i * rows_per_rank),
-                filas, // data.size()
+                rows_per_rank, // data.size()
                 MPI_DOUBLE,
                 i,
                 0,
