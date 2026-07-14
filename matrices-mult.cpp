@@ -2,133 +2,113 @@
 #include <fmt/core.h>
 #include <mpi.h>
 #include <vector>
+#include <cmath>
 
-#define MATRIX_DIM 25
+#define DIMENSION_MATRIZ 25
 
-void imprimir_matriz(const std::vector<double> &A, int rows, int cols)
-{
-    // fmt::print("Matriz A local:\n");
-    for (int i = 0; i < rows; i++)
-    {
-        for (int j = 0; j < cols; j++)
-        {
-            fmt::print("{:.2f} ", A[i * cols + j]);
-        }
-        fmt::print("\n");
-    }
-}
-void imprimir_vector(const std::vector<double> &b)
-{
-    // fmt::print("Vector b local:\n");
-    for (size_t i = 0; i < b.size(); i++)
-    {
-        fmt::print("{:.2f} ", b[i]);
-    }
-    fmt::print("\n");
-}
-void multiplicar_matriz_vector(const std::vector<double> &A, const std::vector<double> &b, std::vector<double> &x, int rows, int cols)
+void multiplicar_matriz_vector(
+    const std::vector<double> &A,
+    const std::vector<double> &b,
+    std::vector<double> &x,
+    int rows,
+    int cols)
 {
     for (int i = 0; i < rows; i++)
     {
-        double suma = 0;
+        double suma = 0.0;
         for (int j = 0; j < cols; j++)
         {
-            int index = i * cols + j;
-            suma += A[index] * b[j];
+            suma += A[i * cols + j] * b[j];
         }
         x[i] = suma;
     }
 }
+
 int main(int argc, char **argv)
 {
-
     MPI_Init(&argc, &argv);
 
-    int nprocs;
-    int rank;
-
+    int nprocs, rank;
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    int rows_per_rank = std::ceil(MATRIX_DIM * 1.0 / nprocs);
-    int total_rows = rows_per_rank * nprocs;
-    int padding = total_rows - MATRIX_DIM;
+    int filas_por_rank = std::ceil(DIMENSION_MATRIZ * 1.0 / nprocs);
+    int total_rows = filas_por_rank * nprocs;
+    int padding = total_rows - DIMENSION_MATRIZ;
 
-    std::vector<double> A(total_rows * MATRIX_DIM);
-    std::vector<double> b(MATRIX_DIM);
-    std::vector<double> x(MATRIX_DIM);
+    std::vector<double> A(total_rows * DIMENSION_MATRIZ, 0.0);
+    std::vector<double> b(DIMENSION_MATRIZ, 1.0);
+    std::vector<double> x(total_rows, 0.0);
 
-    std::vector<double> A_local(rows_per_rank * MATRIX_DIM);
-    std::vector<double> x_local(rows_per_rank);
+    std::vector<double> A_local(filas_por_rank * DIMENSION_MATRIZ, 0.0);
+    std::vector<double> x_local(filas_por_rank, 0.0);
 
     if (rank == 0)
     {
-
-        // inicializar la matriz A y el vector b
-
-        for (int i = 0; i < MATRIX_DIM; i++)
+        for (int i = 0; i < DIMENSION_MATRIZ; i++)
         {
-            for (int j = 0; j < MATRIX_DIM; j++)
+            for (int j = 0; j < DIMENSION_MATRIZ; j++)
             {
-                int index = i * MATRIX_DIM + j;
-                A[index] = i;
+                A[i * DIMENSION_MATRIZ + j] = i + 1;
             }
         }
 
-        for (int i = 0; i < MATRIX_DIM; i++)
-        {
-            b[i] = 1;
-        }
-
-        // nmero de filas para cada RANK (proceso)
-        fmt::print("MATRIX_DIM: {}, nprocs: {}, rows_per_rank: {}, total_rows: {}, padding: {}\n",
-                   MATRIX_DIM, nprocs, rows_per_rank, total_rows, padding);
+        fmt::print("DIMENSION_MATRIZ={}, nprocs={}, filas_por_rank={}, total_rows={}, padding={}\n",
+                   DIMENSION_MATRIZ, nprocs, filas_por_rank, total_rows, padding);
     }
 
-    MPI_Bcast(
-        b.data(),
-        MATRIX_DIM,
-        MPI_DOUBLE,
-        0,
-        MPI_COMM_WORLD);
+    MPI_Bcast(b.data(), DIMENSION_MATRIZ, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
     MPI_Scatter(
         A.data(),
-        rows_per_rank * MATRIX_DIM,
+        filas_por_rank * DIMENSION_MATRIZ,
         MPI_DOUBLE,
-
         A_local.data(),
-        rows_per_rank * MATRIX_DIM,
+        filas_por_rank * DIMENSION_MATRIZ,
         MPI_DOUBLE,
-
         0,
         MPI_COMM_WORLD);
 
-    multiplicar_matriz_vector(
-        A_local,
-        b,
-        x_local,
-        rows_per_rank,
-        MATRIX_DIM);
+    // fmt::print("Matriz procesada por el proceso {}: \n", rank);
+    // for (int i = 0; i < A_local.size(); i++)
+    // {
+    //     fmt::print("{:.2f} ", A_local[i]);
+    // }
+    // fmt::print("\n");
+    int filas_validas = 0;
+    int fila_inicial_global = rank * filas_por_rank;
+
+    if (fila_inicial_global < DIMENSION_MATRIZ)
+    {
+        filas_validas = std::min(filas_por_rank, DIMENSION_MATRIZ - fila_inicial_global);
+    }
+
+    if (filas_validas > 0)
+    {
+        fmt::print("Proceso {}: filas_validas={}, fila_inicial_global={}\n", rank, filas_validas, fila_inicial_global);
+        multiplicar_matriz_vector(A_local, b, x_local, filas_validas, DIMENSION_MATRIZ);
+    }
 
     MPI_Gather(
         x_local.data(),
-        rows_per_rank,
+        filas_por_rank,
         MPI_DOUBLE,
-
         x.data(),
-        rows_per_rank,
+        filas_por_rank,
         MPI_DOUBLE,
-
         0,
         MPI_COMM_WORLD);
 
     if (rank == 0)
     {
-        imprimir_vector(x);
+        fmt::print("Resultado real:\n");
+        for (int i = 0; i < DIMENSION_MATRIZ; i++)
+        {
+            fmt::print("{:.2f} ", x[i]);
+        }
+        fmt::print("\n");
     }
 
     MPI_Finalize();
-
     return 0;
 }

@@ -24,4 +24,36 @@ target_link_libraries(matrices-mult PRIVATE
     fmt::fmt
     ${MPI_LIB}/impi.lib
    )
+add_executable(matrices-mult-no matrices-mult-no.cpp)
+
+target_link_libraries(matrices-mult-no PRIVATE 
+    fmt::fmt
+    ${MPI_LIB}/impi.lib
+   )
+
+add_executable(busqueda busqueda.cpp)
+
+target_link_libraries(busqueda PRIVATE 
+    fmt::fmt
+    ${MPI_LIB}/impi.lib
+   )
+add_executable(escala-grises escala-grises.cpp)
+
+target_link_libraries(escala-grises PRIVATE 
+    fmt::fmt
+    ${MPI_LIB}/impi.lib
+   )
+add_executable(escala-grises-no escala-grises-no.cpp)
+
+target_link_libraries(escala-grises-no PRIVATE 
+    fmt::fmt
+    ${MPI_LIB}/impi.lib
+   )
+
+add_executable(testeo testeo.cpp)
+
+target_link_libraries(testeo PRIVATE 
+    fmt::fmt
+    ${MPI_LIB}/impi.lib
+   )
 
