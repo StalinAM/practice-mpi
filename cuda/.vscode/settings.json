@@ -1,0 +1,8 @@
+{
+  "cmake.buildDirectory": "${workspaceFolder}/build",
+  "cmake.generator": "Visual Studio 18 2026",
+  "cmake.configureSettings": {
+    "CMAKE_TOOLCHAIN_FILE": "D:/DEV/tools/vcpkg-2026.03.18/scripts/buildsystems/vcpkg.cmake",
+    "VCPKG_TARGET_TRIPLET": "x64-windows"
+  }
+}
