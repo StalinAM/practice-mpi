@@ -1,1 +1,137 @@
 build
+#include <iostream>
+#include <vector>
+#include <cstdint>
+#include <algorithm>
+#include <fmt/core.h>
+#include <cuda_runtime.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
+__global__ void rgba_a_gris_kernel(
+    const uint8_t* rgba,
+    uint8_t* gris,
+    int ancho,
+    int alto)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x < ancho && y < alto)
+    {
+        int idx_rgba = (y * ancho + x) * 4;
+        int idx_gris = y * ancho + x;
+
+        uint8_t r = rgba[idx_rgba];
+        uint8_t g = rgba[idx_rgba + 1];
+        uint8_t b = rgba[idx_rgba + 2];
+
+        double valor = 0.21 * r + 0.72 * g + 0.07 * b;
+        gris[idx_gris] = static_cast<uint8_t>(valor);
+    }
+}
+
+__global__ void convolucion_kernel(
+    const uint8_t* entrada,
+    uint8_t* salida,
+    int ancho,
+    int alto,
+    const float* mascara,
+    int ksize)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x < ancho && y < alto)
+    {
+        int radio = ksize / 2;
+        float suma = 0.0f;
+
+        for (int ky = -radio; ky <= radio; ky++)
+        {
+            for (int kx = -radio; kx <= radio; kx++)
+            {
+                int ix = x + kx;
+                int iy = y + ky;
+
+                if (ix < 0) ix = 0;
+                if (ix >= ancho) ix = ancho - 1;
+                if (iy < 0) iy = 0;
+                if (iy >= alto) iy = alto - 1;
+
+                int idx_img = iy * ancho + ix;
+                int idx_k = (ky + radio) * ksize + (kx + radio);
+
+                suma += entrada[idx_img] * mascara[idx_k];
+            }
+        }
+
+        suma = fminf(255.0f, fmaxf(0.0f, suma));
+        salida[y * ancho + x] = static_cast<uint8_t>(suma);
+    }
+}
+
+int main()
+{
+    int ancho = 0;
+    int alto = 0;
+    int canales = 0;
+
+    uint8_t* pixeles = stbi_load("original.jpg", &ancho, &alto, &canales, STBI_rgb_alpha);
+    if (!pixeles)
+    {
+        fmt::print("Error: no se pudo cargar original.jpg\n");
+        return 1;
+    }
+
+    fmt::print("Imagen cargada: ancho={}, alto={}\n", ancho, alto);
+
+    size_t bytes_rgba = static_cast<size_t>(ancho) * alto * 4;
+    size_t bytes_gris = static_cast<size_t>(ancho) * alto;
+
+    uint8_t *d_rgba = nullptr, *d_gris = nullptr, *d_salida = nullptr;
+    float* d_mascara = nullptr;
+
+    cudaMalloc((void**)&d_rgba, bytes_rgba);
+    cudaMalloc((void**)&d_gris, bytes_gris);
+    cudaMalloc((void**)&d_salida, bytes_gris);
+
+    cudaMemcpy(d_rgba, pixeles, bytes_rgba, cudaMemcpyHostToDevice);
+
+    const int ksize = 3;
+    float mascara[ksize * ksize] = {
+         0, -1,  0,
+        -1,  5, -1,
+         0, -1,  0
+    };
+
+    cudaMalloc((void**)&d_mascara, ksize * ksize * sizeof(float));
+    cudaMemcpy(d_mascara, mascara, ksize * ksize * sizeof(float), cudaMemcpyHostToDevice);
+
+    dim3 block(16, 16);
+    dim3 grid((ancho + block.x - 1) / block.x,
+              (alto + block.y - 1) / block.y);
+
+    rgba_a_gris_kernel<<<grid, block>>>(d_rgba, d_gris, ancho, alto);
+    cudaDeviceSynchronize();
+
+    convolucion_kernel<<<grid, block>>>(d_gris, d_salida, ancho, alto, d_mascara, ksize);
+    cudaDeviceSynchronize();
+
+    std::vector<uint8_t> salida_host(bytes_gris);
+    cudaMemcpy(salida_host.data(), d_salida, bytes_gris, cudaMemcpyDeviceToHost);
+
+    stbi_write_png("img-convolucion-cuda.png", ancho, alto, 1, salida_host.data(), ancho);
+
+    cudaFree(d_rgba);
+    cudaFree(d_gris);
+    cudaFree(d_salida);
+    cudaFree(d_mascara);
+    stbi_image_free(pixeles);
+
+    fmt::print("Imagen guardada como img-convolucion-cuda.png\n");
+    return 0;
+}
